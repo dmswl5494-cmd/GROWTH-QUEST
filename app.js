@@ -80,24 +80,226 @@
   }
 
   // --- 2. SINGLE SOURCE OF TRUTH REPOSITORY ENGINE ---
+    const firebaseConfig = {
+    apiKey: "AIzaSyAZV2o2fJbaRF2VJexHob7smQRqz5IZk74",
+    authDomain: "growth-quest-f2154.firebaseapp.com",
+    projectId: "growth-quest-f2154",
+    storageBucket: "growth-quest-f2154.firebasestorage.app",
+    messagingSenderId: "1088789095449",
+    appId: "1:1088789095449:web:c087104177698647a07688",
+    measurementId: "G-RVEET5E47E"
+  };
+
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  const db = firebase.firestore();
+
   class GrowthQuestStore {
     constructor() {
-      this.STORAGE_KEYS = {
-        USERS: 'gq_user_accounts',
-        ASSIGNMENTS: 'gq_mentor_assignments',
-        JOURNALS: 'gq_weekly_journals',
-        ASSESSMENTS: 'gq_self_assessments',
-        FEEDBACKS: 'gq_mentor_feedbacks',
-        OVERRIDES: 'gq_growth_map_overrides',
-        AUDIT_LOGS: 'gq_audit_logs',
-        BACKUPS: 'gq_backups',
-        SESSION: 'gq_active_session',
-        DATA_VERSION: 'gq_data_version'
-      };
-
       this.listeners = [];
+      this.data = {
+        users: [],
+        assignments: [],
+        journals: [],
+        assessments: [],
+        feedbacks: [],
+        overrides: [],
+        auditLogs: [],
+        backups: [],
+        programWeeks: []
+      };
+      this.session = JSON.parse(localStorage.getItem("gq_active_session") || "null");
+      this.unsubscribes = [];
       this.init();
     }
+
+    subscribe(listener) {
+      this.listeners.push(listener);
+      return () => {
+        this.listeners = this.listeners.filter(l => l !== listener);
+      };
+    }
+
+    notify() {
+      this.listeners.forEach(fn => fn());
+    }
+
+    async init() {
+      await this.runMigrationIfRequired();
+      this.startRealtimeSync();
+    }
+
+    async runMigrationIfRequired() {
+      const migrated = localStorage.getItem("gq_fb_migrated");
+      if (migrated === "true") return;
+
+      console.log("Running one-time Firebase migration...");
+      // Migration logic from localStorage to Firestore
+      const parseLS = (key) => JSON.parse(localStorage.getItem(key) || "[]");
+      const oldUsers = parseLS("gq_user_accounts");
+      
+      if (oldUsers.length > 0) {
+        const batch = db.batch();
+        
+        oldUsers.forEach(u => {
+          batch.set(db.collection("users").doc(u.id), u);
+        });
+
+        parseLS("gq_mentor_assignments").forEach(a => {
+          batch.set(db.collection("assignments").doc(a.id), a);
+        });
+
+        parseLS("gq_weekly_journals").forEach(j => {
+          batch.set(db.collection("journals").doc(j.id), j);
+        });
+
+        parseLS("gq_self_assessments").forEach(a => {
+          batch.set(db.collection("assessments").doc(a.id), a);
+        });
+
+        parseLS("gq_mentor_feedbacks").forEach(f => {
+          // Format migration v1 -> v2
+          const newF = { ...f };
+          newF.internalEvaluation = {
+            observedStrengths: f.strengths || "",
+            improvementsNeeded: f.improvementActions || ""
+          };
+          newF.juniorVisibleFeedback = {
+            overallEncouragement: f.overallComment || ""
+          };
+          // Remove old keys if desired, but retaining is fine
+          batch.set(db.collection("feedbacks").doc(f.id), newF);
+        });
+
+        // Initialize 16 Program Weeks
+        const pWeeks = [
+          { weekNumber: 1, label: "1주차", startDate: "2026-09-01", endDate: "2026-09-04", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 2, label: "2주차", startDate: "2026-09-07", endDate: "2026-09-11", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 3, label: "3주차", startDate: "2026-09-14", endDate: "2026-09-18", isSubmissionWeek: true, isExcluded: false },
+          { label: "제외기간", startDate: "2026-09-21", endDate: "2026-09-25", isSubmissionWeek: false, isExcluded: true },
+          { weekNumber: 4, label: "4주차", startDate: "2026-09-28", endDate: "2026-10-02", isSubmissionWeek: true, isExcluded: false },
+          { label: "제외기간", startDate: "2026-10-05", endDate: "2026-10-09", isSubmissionWeek: false, isExcluded: true },
+          { weekNumber: 5, label: "5주차", startDate: "2026-10-12", endDate: "2026-10-16", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 6, label: "6주차", startDate: "2026-10-19", endDate: "2026-10-23", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 7, label: "7주차", startDate: "2026-10-26", endDate: "2026-10-30", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 8, label: "8주차", startDate: "2026-11-02", endDate: "2026-11-06", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 9, label: "9주차", startDate: "2026-11-09", endDate: "2026-11-13", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 10, label: "10주차", startDate: "2026-11-16", endDate: "2026-11-20", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 11, label: "11주차", startDate: "2026-11-23", endDate: "2026-11-27", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 12, label: "12주차", startDate: "2026-11-30", endDate: "2026-12-04", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 13, label: "13주차", startDate: "2026-12-07", endDate: "2026-12-11", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 14, label: "14주차", startDate: "2026-12-14", endDate: "2026-12-18", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 15, label: "15주차", startDate: "2026-12-21", endDate: "2026-12-24", isSubmissionWeek: true, isExcluded: false },
+          { weekNumber: 16, label: "16주차", startDate: "2026-12-28", endDate: "2026-12-31", isSubmissionWeek: true, isExcluded: false }
+        ];
+
+        pWeeks.forEach((w, i) => {
+          const id = "pw_" + i;
+          batch.set(db.collection("programWeeks").doc(id), {
+            id,
+            ...w,
+            timezone: "Asia/Seoul",
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        });
+
+        await batch.commit();
+      }
+
+      localStorage.setItem("gq_fb_migrated", "true");
+      console.log("Migration complete!");
+    }
+
+    startRealtimeSync() {
+      const collections = ["users", "assignments", "journals", "assessments", "feedbacks", "overrides", "auditLogs", "backups", "programWeeks"];
+      collections.forEach(col => {
+        const unsub = db.collection(col).onSnapshot(snap => {
+          const docs = [];
+          snap.forEach(doc => docs.push(doc.data()));
+          this.data[col] = docs;
+          this.notify();
+        });
+        this.unsubscribes.push(unsub);
+      });
+    }
+
+    // GETTERS
+    getUsers() { return this.data.users; }
+    getUserById(id) { return this.data.users.find(u => u.id === id); }
+    getUserByUsername(username) { return this.data.users.find(u => u.username === username); }
+    getAssignments() { return this.data.assignments; }
+    getJournals() { return this.data.journals; }
+    getJournal(juniorUserId, week) { return this.data.journals.find(j => j.juniorUserId === juniorUserId && j.week === week); }
+    getAssessments() { return this.data.assessments; }
+    getAssessment(juniorUserId, week) { return this.data.assessments.find(a => a.juniorUserId === juniorUserId && a.week === week); }
+    getFeedbacks() { return this.data.feedbacks; }
+    getFeedback(juniorUserId, mentorUserId, week) { return this.data.feedbacks.find(f => f.juniorUserId === juniorUserId && f.mentorUserId === mentorUserId && f.week === week); }
+    getFeedbacksForJunior(juniorUserId) { return this.data.feedbacks.filter(f => f.juniorUserId === juniorUserId); }
+    getOverrides() { return this.data.overrides; }
+    getAuditLogs() { return this.data.auditLogs; }
+    getBackups() { return this.data.backups; }
+    getProgramWeeks() { return this.data.programWeeks.sort((a, b) => a.startDate.localeCompare(b.startDate)); }
+
+    // SETTERS (Writing to Firestore)
+    async _saveDoc(col, data) {
+      if (!data.id) data.id = db.collection(col).doc().id;
+      data.updatedAt = new Date().toISOString();
+      await db.collection(col).doc(data.id).set(data);
+    }
+
+    saveUser(user) { this._saveDoc("users", user); }
+    syncMentorAssignments(mentorUserId, juniorUserIds, actorUserId) {
+      const existing = this.getAssignments().filter(a => a.mentorUserId === mentorUserId && a.isActive);
+      const batch = db.batch();
+      
+      existing.forEach(a => {
+        if (!juniorUserIds.includes(a.juniorUserId)) {
+          const ref = db.collection("assignments").doc(a.id);
+          batch.update(ref, { isActive: false, updatedAt: new Date().toISOString() });
+        }
+      });
+
+      juniorUserIds.forEach(jid => {
+        if (!existing.some(a => a.juniorUserId === jid)) {
+          const ref = db.collection("assignments").doc();
+          batch.set(ref, {
+            id: ref.id, mentorUserId, juniorUserId: jid, isActive: true, createdByUserId: actorUserId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1
+          });
+        }
+      });
+      batch.commit();
+    }
+    saveJournal(journal) { if (!journal.id) journal.id = journal.juniorUserId + "_" + journal.week; this._saveDoc("journals", journal); }
+    saveAssessment(assessment) { if (!assessment.id) assessment.id = assessment.juniorUserId + "_" + assessment.week; this._saveDoc("assessments", assessment); }
+    
+    saveFeedback(feedback) { 
+      if (!feedback.id) feedback.id = feedback.juniorUserId + "_" + feedback.mentorUserId + "_" + feedback.week;
+      this._saveDoc("feedbacks", feedback); 
+      this.addAuditLog(feedback.mentorUserId, "SAVE_MENTOR_FEEDBACK", [feedback.juniorUserId], null, { week: feedback.week, status: feedback.status });
+    }
+
+    addAuditLog(actorUserId, actionType, targetUserIds, beforeData, afterData, reason) {
+      this._saveDoc("auditLogs", { actorUserId, actionType, targetUserIds, beforeData, afterData, reason, createdAt: new Date().toISOString() });
+    }
+
+    // SESSION
+    getCurrentSession() { return this.session; }
+    setSession(user) {
+      if (user) {
+        user.lastLoginAt = new Date().toISOString();
+        this.saveUser(user);
+        this.session = { id: user.id, username: user.username, role: user.role };
+      } else {
+        this.session = null;
+      }
+      localStorage.setItem("gq_active_session", JSON.stringify(this.session));
+      this.notify();
+    }
+    logout() { this.setSession(null); }
+  }
 
     subscribe(listener) {
       this.listeners.push(listener);
@@ -688,7 +890,7 @@
           <div class="auth-card">
             <div class="auth-header">
               <div class="auth-logo">🚀 GROWTH QUEST</div>
-              <div class="auth-slogan">12주 동안 발견하는 나의 성장 공식</div>
+              <div class="auth-slogan">GROWTH QUEST와 함께하는 나의 성장 공식</div>
             </div>
 
             ${errorMsg ? `<div class="alert alert-danger" id="login-error-alert">${errorMsg}</div>` : '<div id="login-error-alert"></div>'}
@@ -850,6 +1052,7 @@
           <a class="nav-item ${this.currentRoute === 'JOURNAL' ? 'active' : ''}" data-route="JOURNAL"><span class="nav-icon">📝</span> 전체 성장일지</a>
           <a class="nav-item ${this.currentRoute === 'GROWTH_MAP' ? 'active' : ''}" data-route="GROWTH_MAP"><span class="nav-icon">🗺️</span> 전체 성장지도</a>
           <a class="nav-item ${this.currentRoute === 'ADMIN_FEEDBACK_HISTORY' ? 'active' : ''}" data-route="ADMIN_FEEDBACK_HISTORY"><span class="nav-icon">💬</span> 전체 멘토 피드백 이력</a>
+          <a class="nav-item ${this.currentRoute === 'ADMIN_WEEKS_SETTINGS' ? 'active' : ''}" data-route="ADMIN_WEEKS_SETTINGS"><span class="nav-icon">📅</span> 운영주차 설정</a>
           <a class="nav-item ${this.currentRoute === 'GROWTH_DATA_MGMT' ? 'active' : ''}" data-route="GROWTH_DATA_MGMT"><span class="nav-icon">⚙️</span> 성장 데이터 관리</a>
           <a class="nav-item ${this.currentRoute === 'AUDIT_LOGS' ? 'active' : ''}" data-route="AUDIT_LOGS"><span class="nav-icon">📜</span> 감사 로그 & 이력</a>
         `;
@@ -886,7 +1089,6 @@
             <header class="app-header">
               <div class="page-title">${this.getRouteTitle()}</div>
               <div class="header-actions">
-                ${this.renderTargetJuniorSelector(user)}
               </div>
             </header>
 
@@ -986,17 +1188,45 @@
       `;
     }
 
+    getCurrentKoreanDate() {
+      const d = new Date();
+      const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+      return new Date(utc + (3600000 * 9));
+    }
+
+    getCurrentProgramWeek() {
+      const kst = this.getCurrentKoreanDate();
+      const kstStr = kst.toISOString().split('T')[0];
+      const pWeeks = window.gqStore.getProgramWeeks();
+      const current = pWeeks.find(pw => kstStr >= pw.startDate && kstStr <= pw.endDate);
+      return current || null;
+    }
+
     // §16 Common Week Selector UI Helper
     renderWeekSelector(selectedWeek, onSelectCallback, availableWeeks = null) {
       const container = document.createElement('div');
       container.className = 'week-selector-container';
 
-      for (let w = 1; w <= 12; w++) {
+      const pWeeks = window.gqStore.getProgramWeeks();
+      
+      pWeeks.forEach(pw => {
+        if (pw.isExcluded) {
+          const sep = document.createElement('span');
+          sep.className = 'week-separator';
+          sep.innerText = pw.label;
+          sep.style.fontSize = '0.75rem';
+          sep.style.color = 'var(--text-muted)';
+          sep.style.padding = '0.5rem';
+          container.appendChild(sep);
+          return;
+        }
+
+        const w = pw.weekNumber;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = `week-btn ${w === selectedWeek ? 'active' : ''}`;
         btn.setAttribute('aria-selected', w === selectedWeek ? 'true' : 'false');
-        btn.innerText = `${w}주차`;
+        btn.innerText = pw.label;
 
         if (availableWeeks && !availableWeeks.includes(w)) {
           btn.classList.add('disabled');
@@ -1008,7 +1238,7 @@
         };
 
         container.appendChild(btn);
-      }
+      });
 
       return container;
     }
@@ -1053,6 +1283,9 @@
         case 'GROWTH_DATA_MGMT':
           this.renderGrowthDataMgmt(container, currentUser);
           break;
+        case 'ADMIN_WEEKS_SETTINGS':
+          this.renderAdminWeeksSettings(container, currentUser);
+          break;
         case 'AUDIT_LOGS':
           this.renderAuditLogs(container, currentUser);
           break;
@@ -1071,8 +1304,11 @@
       const targetUserId = user.role === "JUNIOR" ? user.id : this.selectedJuniorId;
       const targetUser = window.gqStore.getUserById(targetUserId);
       const journals = window.gqStore.getJournals().filter(j => j.juniorUserId === targetUserId);
+      const pWeeks = window.gqStore.getProgramWeeks();
+      const validWeeksCount = pWeeks.filter(w => !w.isExcluded).length;
+      
       const submittedCount = journals.filter(j => j.status === 'SUBMITTED').length;
-      const rate = Math.round((submittedCount / 12) * 100);
+      const rate = validWeeksCount > 0 ? Math.round((submittedCount / validWeeksCount) * 100) : 0;
 
       const latestJournal = window.gqStore.getJournal(targetUserId, this.selectedWeek);
       const latestFeedbacks = window.gqStore.getFeedbacksForJunior(targetUserId).filter(f => f.status === 'SUBMITTED');
@@ -1083,11 +1319,11 @@
             ${targetUser ? targetUser.displayName : user.username} 님
           </h2>
           <p style="color: var(--text-muted); font-size: 0.95rem;">
-            12주 동안 발견하는 나의 성장 공식 | 현재 <strong>${this.selectedWeek}주차</strong> 여정 진행 중입니다.
+            GROWTH QUEST와 함께하는 나의 성장 공식 | 현재 <strong>${this.selectedWeek}주차</strong> 여정 진행 중입니다.
           </p>
         </div>
 
-        <div class="grid grid-cols-4">
+        <div class="grid grid-cols-3" style="margin-bottom: 1.5rem;">
           <div class="card" style="text-align: center;">
             <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">현재 주차</div>
             <div style="font-size: 2rem; font-weight: 800; color: var(--primary); margin-top: 0.25rem;">${this.selectedWeek}주차</div>
@@ -1096,7 +1332,7 @@
           <div class="card" style="text-align: center;">
             <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">성장일지 작성률</div>
             <div style="font-size: 2rem; font-weight: 800; color: var(--secondary); margin-top: 0.25rem;">${rate}%</div>
-            <div style="font-size: 0.75rem; color: var(--text-light);">${submittedCount} / 12 주차 제출 완료</div>
+            <div style="font-size: 0.75rem; color: var(--text-light);">${submittedCount} / ${validWeeksCount} 주차 제출 완료</div>
           </div>
 
           <div class="card" style="text-align: center;">
@@ -1105,11 +1341,57 @@
               ${latestJournal ? (latestJournal.status === 'SUBMITTED' ? '<span class="badge badge-success" style="font-size: 1rem; padding: 0.4rem 0.8rem;">제출 완료</span>' : '<span class="badge badge-warning" style="font-size: 1rem; padding: 0.4rem 0.8rem;">임시 저장 중</span>') : '<span class="badge badge-danger" style="font-size: 1rem; padding: 0.4rem 0.8rem;">미작성</span>'}
             </div>
           </div>
+        </div>
 
-          <div class="card" style="text-align: center;">
-            <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">성장 획득 XP</div>
-            <div style="font-size: 2rem; font-weight: 800; color: var(--success); margin-top: 0.25rem;">${submittedCount * 250} XP</div>
-            <div style="font-size: 0.75rem; color: var(--text-light);">Level ${Math.floor(submittedCount / 3) + 1} 성장자</div>
+        <!-- 6단계: 주니어사원 성장지도 UI 개편 -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+          <div class="card-header">
+            <div class="card-title">🗺️ 나의 전체 성장지도</div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(8, 1fr); gap: 0.5rem; margin-top: 1rem;">
+            ${pWeeks.map(w => {
+              const jnl = journals.find(j => j.week === w.weekNumber);
+              const isCurrent = w.weekNumber === this.selectedWeek;
+              
+              let bgColor = '#f1f5f9';
+              let textColor = '#64748b';
+              let pulseClass = '';
+              let statusText = '대기';
+              
+              if (w.isExcluded) {
+                bgColor = '#f3f4f6';
+                textColor = '#9ca3af';
+                statusText = '제외';
+              } else if (jnl && jnl.status === 'SUBMITTED') {
+                bgColor = '#dcfce7';
+                textColor = '#16a34a';
+                statusText = '완료';
+              } else if (jnl && jnl.status === 'DRAFT') {
+                bgColor = '#fef3c7';
+                textColor = '#d97706';
+                statusText = '작성중';
+              } else if (w.weekNumber < this.selectedWeek) {
+                bgColor = '#fee2e2';
+                textColor = '#ef4444';
+                statusText = '미제출';
+              }
+
+              if (isCurrent) {
+                pulseClass = 'pulse-animation';
+                if (!jnl || jnl.status !== 'SUBMITTED') {
+                  bgColor = '#dbeafe';
+                  textColor = '#2563eb';
+                  statusText = '진행중';
+                }
+              }
+
+              return `
+                <div class="${pulseClass}" style="background-color: ${bgColor}; color: ${textColor}; padding: 0.75rem 0.5rem; border-radius: var(--radius-sm); text-align: center; border: ${isCurrent ? '2px solid #3b82f6' : '1px solid transparent'}; box-shadow: ${isCurrent ? '0 0 10px rgba(59, 130, 246, 0.5)' : 'none'};">
+                  <div style="font-size: 0.8rem; font-weight: bold;">${w.weekNumber}주차</div>
+                  <div style="font-size: 0.7rem; margin-top: 0.2rem;">${statusText}</div>
+                </div>
+              `;
+            }).join('')}
           </div>
         </div>
 
@@ -1129,8 +1411,8 @@
             </div>
             ${latestFeedbacks.length > 0 ? `
               <div style="font-size: 0.9rem; color: var(--text-main);">
-                <strong>${window.gqStore.getUserById(latestFeedbacks[0].mentorUserId)?.displayName || '담당 멘토'}</strong> 님의 피드백:<br>
-                <span style="color: var(--text-muted); display: block; margin-top: 0.4rem; white-space: pre-wrap;">"${summarizeFeedbackText(latestFeedbacks[0])}"</span>
+                <strong>${latestFeedbacks[0].mentorName || window.gqStore.getUserById(latestFeedbacks[0].mentorUserId)?.displayName || '담당 멘토'}</strong> 님의 피드백:<br>
+                <span style="color: var(--text-muted); display: block; margin-top: 0.4rem; white-space: pre-wrap;">"${latestFeedbacks[0].juniorVisibleFeedback?.overallEncouragement || latestFeedbacks[0].overallComment || '격려의 메시지가 도착했습니다.'}"</span>
               </div>
             ` : `<p style="font-size: 0.9rem; color: var(--text-muted);">제출된 멘토 피드백이 아직 없습니다.</p>`}
           </div>
@@ -1138,7 +1420,6 @@
       `;
     }
 
-    // §8 & §13 & §6. GROWTH JOURNAL VIEW WITH AUTOMATIC AUTO-SAVE BEFORE STEP MOVEMENTS
     renderJournalView(container, user) {
       const targetUserId = user.role === "JUNIOR" ? user.id : this.selectedJuniorId;
       const targetUser = window.gqStore.getUserById(targetUserId);
@@ -1480,6 +1761,32 @@
         }
       };
 
+      // Real-time Event Listeners for UX (Step 2 conditional and Sliders)
+      const helpSelect = document.getElementById('step2_helpRequested');
+      const noHelpGroup = document.getElementById('group-no-help-reason');
+      const noHelpReasonInput = document.getElementById('step2_noHelpReason');
+      if (helpSelect && noHelpGroup) {
+        helpSelect.onchange = () => {
+          if (helpSelect.value === 'NO_SOLVED_ALONE') {
+            noHelpGroup.style.display = 'block';
+          } else {
+            noHelpGroup.style.display = 'none';
+            if (noHelpReasonInput) noHelpReasonInput.value = '';
+          }
+        };
+      }
+
+      COMPETENCY_CONFIG.forEach(cfg => {
+        const slider = document.getElementById(`score-${cfg.key}`);
+        const valDisplay = document.getElementById(`val-${cfg.key}`);
+        if (slider && valDisplay) {
+          slider.oninput = (e) => {
+            valDisplay.innerText = `${e.target.value}점`;
+            slider.setAttribute('aria-valuenow', e.target.value);
+          };
+        }
+      });
+
       // Event Handlers for Stepper
       document.querySelectorAll('.step-item').forEach(item => {
         item.onclick = () => {
@@ -1650,7 +1957,8 @@
       const assessments = window.gqStore.getAssessments().filter(a => a.juniorUserId === targetUserId);
       const overrides = window.gqStore.getOverrides().filter(o => o.juniorUserId === targetUserId);
 
-      const weekScores = Array.from({length: 12}, (_, i) => {
+      const validWeeksCount = window.gqStore.getProgramWeeks().filter(pw => !pw.isExcluded).length;
+      const weekScores = Array.from({length: validWeeksCount}, (_, i) => {
         const w = i + 1;
         const raw = assessments.find(a => a.week === w);
         const ovr = overrides.find(o => o.week === w);
@@ -1673,7 +1981,7 @@
 
         <div class="card">
           <div class="card-header">
-            <div class="card-title">📈 12주 종합 성장점수 변화 (${targetUser ? targetUser.displayName : ''} 님)</div>
+            <div class="card-title">📈 주 종합 성장점수 변화 (${targetUser ? targetUser.displayName : ''} 님)</div>
           </div>
           <div style="height: 300px; position: relative;">
             <canvas id="growthChart"></canvas>
@@ -1801,7 +2109,8 @@
         <!-- Junior Details Cards Grid -->
         <div class="grid grid-cols-2">
           ${juniors.map(j => {
-            const journals = window.gqStore.getJournals().filter(jl => jl.juniorUserId === j.id && jl.status === 'SUBMITTED');
+            const journals = window.gqStore.getJournals().filter(jl => jl.juniorUserId === j.id && jl.status === \'SUBMITTED\');
+            const validWeeksCount = window.gqStore.getProgramWeeks().filter(pw => !pw.isExcluded).length;
             const latestJournal = window.gqStore.getJournal(j.id, this.selectedWeek);
             const feedback = window.gqStore.getFeedback(j.id, user.id, this.selectedWeek);
 
@@ -1818,7 +2127,7 @@
                 </div>
 
                 <div style="background: #f8fafc; padding: 0.85rem; border-radius: var(--radius-md); margin-bottom: 1rem; font-size: 0.85rem;">
-                  <div>성장일지 작성률: <strong>${Math.round((journals.length / 12) * 100)}%</strong> (${journals.length}/12 주)</div>
+                  <div>성장일지 작성률: <strong>${validWeeksCount > 0 ? Math.round((journals.length / validWeeksCount) * 100) : 0}%</strong> (${journals.length}/${validWeeksCount} 주)</div>
                   <div style="margin-top: 0.25rem;">피드백 작성 상태: <strong>${feedback ? (feedback.status === 'SUBMITTED' ? '피드백 제출됨' : '임시 저장 중') : '미작성'}</strong></div>
                 </div>
 
@@ -1863,78 +2172,113 @@
       const targetJuniorId = this.selectedJuniorId;
       const targetJunior = window.gqStore.getUserById(targetJuniorId);
 
-      const assignments = window.gqStore.getAssignments();
-      if (user.role === "MENTOR" && !window.gqAuth.canMentorViewJunior(user, targetJuniorId, assignments)) {
-        container.innerHTML = `<div class="alert alert-danger">해당 주니어사원에게 피드백을 작성할 권한이 없습니다.</div>`;
-        return;
+      // Mentor Junior Selection UI (Tabs)
+      let juniorTabsHtml = '';
+      let targetList = [];
+      if (user.role === 'MENTOR') {
+        const assignments = window.gqStore.getAssignments().filter(a => a.mentorUserId === user.id && a.isActive);
+        const myJuniorIds = assignments.map(a => a.juniorUserId);
+        targetList = window.gqStore.getUsers().filter(u => myJuniorIds.includes(u.id) && u.isActive);
+      } else if (user.role === 'ADMIN') {
+        targetList = window.gqStore.getUsers().filter(u => u.role === 'JUNIOR' && u.isActive);
       }
 
-      if (!targetJuniorId) {
+      if (targetList.length > 0) {
+        if (!this.selectedJuniorId || !targetList.find(j => j.id === this.selectedJuniorId)) {
+          this.selectedJuniorId = targetList[0].id;
+        }
+        juniorTabsHtml = `
+          <div style="display:flex; gap:0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+            ${targetList.map(j => `
+              <button class="btn ${j.id === this.selectedJuniorId ? 'btn-primary' : 'btn-outline'} btn-sm fb-junior-tab" data-id="${j.id}">${j.displayName}</button>
+            `).join('')}
+          </div>
+        `;
+      } else {
         container.innerHTML = `<div class="card" style="text-align: center; padding: 2rem; color: var(--text-muted);">현재 배정된 주니어사원이 없습니다.</div>`;
         return;
       }
 
-      const existing = window.gqStore.getFeedback(targetJuniorId, user.id, this.selectedWeek) || {
-        juniorUserId: targetJuniorId,
+      // Ensure we have a valid targetJunior for rendering
+      const currentJunior = window.gqStore.getUserById(this.selectedJuniorId);
+
+      const existing = window.gqStore.getFeedback(this.selectedJuniorId, user.id, this.selectedWeek) || {
+        juniorUserId: this.selectedJuniorId,
         mentorUserId: user.id,
         week: this.selectedWeek,
         status: "DRAFT",
-        strengths: "",
-        maintainActions: "",
-        improvementActions: "",
-        nextAction: "",
-        overallComment: ""
+        mentorTeam: "",
+        mentorName: user.displayName,
+        internalEvaluation: {
+          observedStrengths: "",
+          improvementsNeeded: ""
+        },
+        juniorVisibleFeedback: {
+          overallEncouragement: ""
+        }
       };
 
       container.innerHTML = `
+        ${juniorTabsHtml}
         <div class="card">
           <div class="card-header">
-            <div class="card-title">✏️ 멘토 피드백 작성 (${targetJunior ? targetJunior.displayName : ''} 주니어사원)</div>
+            <div class="card-title">📝 멘토 피드백 작성 (${currentJunior ? currentJunior.displayName : ''} 주니어사원)</div>
           </div>
 
-          <!-- §7 & §16 Button-type Week Selector for Feedback Edit -->
           <div id="fb-edit-week-selector-placeholder"></div>
 
           <form id="mentor-feedback-form">
-            <div class="form-group">
-              <label class="form-label">1. 이번 주에 관찰된 주니어사원의 강점</label>
-              <textarea id="fb-strengths" class="form-textarea" rows="3" placeholder="주도적으로 과제를 진행한 점이 매우 우수함">${existing.strengths || ''}</textarea>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">2. 지속 유지해야 할 좋은 행동</label>
-              <textarea id="fb-maintain" class="form-textarea" rows="3">${existing.maintainActions || ''}</textarea>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">3. 보완 및 개선이 필요한 부분</label>
-              <textarea id="fb-improvement" class="form-textarea" rows="3">${existing.improvementActions || ''}</textarea>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">4. 다음 주 추천 실천 액션</label>
-              <textarea id="fb-next" class="form-textarea" rows="3">${existing.nextAction || ''}</textarea>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">5. 종합 격려 및 코칭 총평</label>
-              <textarea id="fb-overall" class="form-textarea" rows="4" placeholder="12주 완주를 향해 힘내세요!">${existing.overallComment || ''}</textarea>
-            </div>
-
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem;">
-              <span class="badge ${existing.status === 'SUBMITTED' ? 'badge-success' : 'badge-warning'}">
-                ${existing.status === 'SUBMITTED' ? '제출 완료 상태 (수정 가능)' : '임시 저장 상태'}
-              </span>
-              <div style="display: flex; gap: 0.5rem;">
-                <button type="button" class="btn btn-secondary" id="btn-fb-draft">임시 저장</button>
-                <button type="submit" class="btn btn-primary" id="btn-fb-submit">수정내용 저장 & 제출</button>
+            <div class="grid grid-cols-2" style="gap: 1rem; margin-bottom: 1rem;">
+              <div class="form-group">
+                <label class="form-label">소속 팀/본부</label>
+                <input type="text" id="fb-mentor-team" class="form-input" value="${existing.mentorTeam || ''}" placeholder="예) 개발1팀">
               </div>
+              <div class="form-group">
+                <label class="form-label">멘토 성명</label>
+                <input type="text" id="fb-mentor-name" class="form-input" value="${existing.mentorName || user.displayName}">
+              </div>
+            </div>
+
+            <div style="background: #fffbeb; padding: 1rem; border-radius: var(--radius-md); border-left: 4px solid #f59e0b; margin-bottom: 1.5rem;">
+              <h3 style="font-size: 1.1rem; font-weight: bold; color: #b45309; margin-bottom: 0.5rem;">🔒 내부 평가 작성란 (주니어사원 미노출)</h3>
+              <p style="font-size: 0.85rem; color: #92400e; margin-bottom: 1rem;">이 항목들은 관리자와 멘토만 볼 수 있으며, 주니어사원에게는 공개되지 않습니다.</p>
+              
+              <div class="form-group">
+                <label class="form-label">관찰된 주니어사원의 강점</label>
+                <textarea id="fb-internal-strengths" class="form-textarea" rows="3" placeholder="예) 주도적으로 과제를 진행함">${existing.internalEvaluation?.observedStrengths || existing.strengths || ''}</textarea>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">보완 및 개선이 필요한 부분</label>
+                <textarea id="fb-internal-improvements" class="form-textarea" rows="3">${existing.internalEvaluation?.improvementsNeeded || existing.improvementActions || ''}</textarea>
+              </div>
+            </div>
+
+            <div style="background: #f0fdf4; padding: 1rem; border-radius: var(--radius-md); border-left: 4px solid #22c55e; margin-bottom: 1.5rem;">
+              <h3 style="font-size: 1.1rem; font-weight: bold; color: #166534; margin-bottom: 0.5rem;">📢 주니어사원 전달 피드백 (노출됨)</h3>
+              <p style="font-size: 0.85rem; color: #15803d; margin-bottom: 1rem;">이 내용은 주니어사원이 시스템에서 직접 확인할 수 있습니다.</p>
+
+              <div class="form-group">
+                <label class="form-label">종합 코멘트 및 격려사</label>
+                <textarea id="fb-visible-encouragement" class="form-textarea" rows="4" placeholder="따뜻한 격려의 말을 남겨주세요.">${existing.juniorVisibleFeedback?.overallEncouragement || existing.overallComment || ''}</textarea>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem;">
+              <button type="button" class="btn btn-outline" id="btn-fb-draft">임시저장</button>
+              <button type="submit" class="btn btn-primary" id="btn-fb-submit">최종 제출 완료</button>
             </div>
           </form>
         </div>
       `;
 
-      // Render Common Week Selector
+      document.querySelectorAll('.fb-junior-tab').forEach(btn => {
+        btn.onclick = (e) => {
+          this.selectedJuniorId = e.currentTarget.getAttribute('data-id');
+          this.render();
+        };
+      });
+
       const weekSelectorContainer = this.renderWeekSelector(this.selectedWeek, (w) => {
         this.selectedWeek = w;
         this.render();
@@ -1943,20 +2287,25 @@
 
       const saveFb = (status) => {
         const fbData = {
-          id: targetJuniorId + "_" + user.id + "_" + this.selectedWeek,
-          juniorUserId: targetJuniorId,
+          id: this.selectedJuniorId + "_" + user.id + "_" + this.selectedWeek,
+          juniorUserId: this.selectedJuniorId,
           mentorUserId: user.id,
           week: this.selectedWeek,
           status,
-          strengths: document.getElementById('fb-strengths').value,
-          maintainActions: document.getElementById('fb-maintain').value,
-          improvementActions: document.getElementById('fb-improvement').value,
-          nextAction: document.getElementById('fb-next').value,
-          overallComment: document.getElementById('fb-overall').value,
-          updatedByUserId: user.id
+          mentorTeam: document.getElementById('fb-mentor-team').value,
+          mentorName: document.getElementById('fb-mentor-name').value,
+          internalEvaluation: {
+            observedStrengths: document.getElementById('fb-internal-strengths').value,
+            improvementsNeeded: document.getElementById('fb-internal-improvements').value
+          },
+          juniorVisibleFeedback: {
+            overallEncouragement: document.getElementById('fb-visible-encouragement').value
+          },
+          updatedByUserId: user.id,
+          updatedAt: new Date().toISOString()
         };
         window.gqStore.saveFeedback(fbData);
-        alert('변경사항이 저장되었습니다.');
+        alert('피드백이 저장되었습니다.');
       };
 
       document.getElementById('btn-fb-draft').onclick = () => saveFb('DRAFT');
@@ -1966,8 +2315,6 @@
         this.render();
       };
     }
-
-    // §18. JUNIOR MENTOR FEEDBACK VIEW (READ-ONLY STRICT 2-LINE SUMMARY)
     renderMentorFeedbackView(container, user) {
       const targetJuniorId = user.role === "JUNIOR" ? user.id : this.selectedJuniorId;
       const feedbacks = window.gqStore.getFeedbacksForJunior(targetJuniorId).filter(f => f.week === this.selectedWeek && f.status === 'SUBMITTED');
@@ -2546,7 +2893,7 @@
 
       document.getElementById('btn-purge-map').onclick = () => {
         const jIds = window.gqStore.getUsers().filter(u=>u.role==='JUNIOR').map(u=>u.id);
-        const wks = Array.from({length:12}, (_,i)=>i+1);
+        const wks = Array.from({length:16}, (_,i)=>i+1);
         window.gqStore.createBackup(adminUser.id, 'GROWTH_MAP', jIds, wks, '성장지도 초기화 전 자동 백업');
         const count = window.gqStore.clearOverrides(jIds, wks, adminUser.id);
         alert(`선택한 성장지도 보정값 ${count}건이 초기화되었습니다.`);
@@ -2554,7 +2901,7 @@
 
       document.getElementById('btn-purge-fb').onclick = () => {
         const jIds = window.gqStore.getUsers().filter(u=>u.role==='JUNIOR').map(u=>u.id);
-        const wks = Array.from({length:12}, (_,i)=>i+1);
+        const wks = Array.from({length:16}, (_,i)=>i+1);
         window.gqStore.createBackup(adminUser.id, 'MENTOR_FEEDBACK', jIds, wks, '피드백 초기화 전 자동 백업');
         const count = window.gqStore.clearFeedbacks(jIds, [], wks, adminUser.id);
         alert(`선택한 멘토 피드백 ${count}건이 초기화되었습니다.`);
@@ -2567,7 +2914,7 @@
           return;
         }
         const jIds = window.gqStore.getUsers().filter(u=>u.role==='JUNIOR').map(u=>u.id);
-        const wks = Array.from({length:12}, (_,i)=>i+1);
+        const wks = Array.from({length:16}, (_,i)=>i+1);
         window.gqStore.createBackup(adminUser.id, 'BOTH', jIds, wks, '전체 데이터 초기화 전 백업');
         window.gqStore.clearOverrides(jIds, wks, adminUser.id);
         window.gqStore.clearFeedbacks(jIds, [], wks, adminUser.id);
@@ -2650,14 +2997,149 @@
       });
     }
 
+
+    showExportModal() {
+      let modal = document.getElementById('export-modal');
+      if (modal) modal.remove();
+
+      const allJuniors = window.gqStore.getUsers().filter(u => u.role === "JUNIOR" && u.isActive);
+      const pWeeks = window.gqStore.getProgramWeeks().filter(w => !w.isExcluded);
+
+      modal = document.createElement('div');
+      modal.id = 'export-modal';
+      modal.style.position = 'fixed';
+      modal.style.top = '0';
+      modal.style.left = '0';
+      modal.style.width = '100vw';
+      modal.style.height = '100vh';
+      modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+      modal.style.display = 'flex';
+      modal.style.justifyContent = 'center';
+      modal.style.alignItems = 'center';
+      modal.style.zIndex = '9999';
+
+      modal.innerHTML = `
+        <div class="card" style="width: 500px; max-height: 80vh; overflow-y: auto; background: white; color: var(--text-main);">
+          <div class="card-header">
+            <div class="card-title">리포트 PDF 내보내기</div>
+          </div>
+          <div style="margin-bottom: 1rem;">
+            <p style="font-size: 0.9rem; margin-bottom: 0.5rem; font-weight: bold;">1. 대상자 선택</p>
+            <div style="max-height: 150px; overflow-y: auto; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: var(--radius-sm);">
+              ${allJuniors.map(j => `<label style="display:block; margin-bottom:0.3rem;"><input type="checkbox" class="export-user-cb" value="${j.id}" checked> ${j.displayName}</label>`).join('')}
+            </div>
+          </div>
+          <div style="margin-bottom: 1.5rem;">
+            <p style="font-size: 0.9rem; margin-bottom: 0.5rem; font-weight: bold;">2. 주차 선택</p>
+            <div style="max-height: 150px; overflow-y: auto; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: var(--radius-sm);">
+              ${pWeeks.map(w => `<label style="display:block; margin-bottom:0.3rem;"><input type="checkbox" class="export-week-cb" value="${w.weekNumber}" checked> ${w.label}</label>`).join('')}
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+            <button class="btn btn-outline" id="btn-cancel-export">취소</button>
+            <button class="btn btn-primary" id="btn-run-export">PDF 생성 시작</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      document.getElementById('btn-cancel-export').onclick = () => modal.remove();
+      document.getElementById('btn-run-export').onclick = () => {
+        const selectedUsers = Array.from(document.querySelectorAll('.export-user-cb:checked')).map(cb => cb.value);
+        const selectedWeeks = Array.from(document.querySelectorAll('.export-week-cb:checked')).map(cb => parseInt(cb.value, 10));
+        
+        if (selectedUsers.length === 0 || selectedWeeks.length === 0) {
+          alert('대상자와 주차를 최소 하나 이상 선택해주세요.');
+          return;
+        }
+
+        modal.remove();
+        this.generatePDFReport(selectedUsers, selectedWeeks);
+      };
+    }
+
+    async generatePDFReport(userIds, weeks) {
+      if (typeof html2pdf === 'undefined') {
+        alert('html2pdf 라이브러리를 불러오지 못했습니다. 페이지를 새로고침 해주세요.');
+        return;
+      }
+      
+      const container = document.createElement('div');
+      container.style.padding = '2rem';
+      container.style.backgroundColor = 'white';
+      container.style.color = 'black';
+      container.style.width = '800px';
+      
+      let html = `<h1 style="text-align:center; font-size: 24px; margin-bottom: 30px;">GROWTH QUEST 주니어사원 성장일지 및 피드백 종합 리포트</h1>`;
+      
+      for (let uid of userIds) {
+        const u = window.gqStore.getUserById(uid);
+        html += `<h2 style="font-size: 20px; border-bottom: 2px solid #ccc; padding-bottom: 5px; margin-top: 40px; margin-bottom: 20px;">[ ${u.displayName} ] 성장일지 리포트</h2>`;
+        
+        for (let w of weeks) {
+          const j = window.gqStore.getJournal(uid, w);
+          if (j && j.status === 'SUBMITTED') {
+            html += `<div style="margin-bottom: 20px; page-break-inside: avoid; border: 1px solid #ddd; padding: 15px; border-radius: 8px;">`;
+            html += `<h3 style="font-size: 16px; margin-top: 0; color: #4f46e5;">[ ${w}주차 ] 제출일: ${new Date(j.updatedAt).toLocaleDateString()}</h3>`;
+            html += `<p><strong>Q1. 업무 수행:</strong> ${j.step1_workDone}</p>`;
+            html += `<p><strong>Q2. 도움 요청 여부:</strong> ${j.step2_helpRequested === 'NO_SOLVED_ALONE' ? '혼자 해결' : (j.step2_helpRequested === 'YES_MENTOR' ? '멘토에게 도움 받음' : (j.step2_helpRequested === 'YES_TEAM' ? '팀원에게 도움 받음' : '도움 안받음'))}</p>`;
+            html += `<p><strong>Q3. 학습 및 성장:</strong> ${j.step3_learned}</p>`;
+            html += `<p><strong>Q4. 다음 주 목표:</strong> ${j.step4_nextGoal}</p>`;
+            
+            // Append Mentor Feedback if exists
+            const assignments = window.gqStore.getAssignments().filter(a => a.juniorUserId === uid);
+            if (assignments.length > 0) {
+              const fb = window.gqStore.getFeedback(uid, assignments[0].mentorUserId, w);
+              if (fb && fb.status === 'SUBMITTED') {
+                html += `<div style="background: #f1f5f9; padding: 10px; margin-top: 15px; border-radius: 5px;">`;
+                html += `<h4 style="margin-top: 0; color: #0f172a;">멘토 피드백</h4>`;
+                html += `<p style="margin-bottom: 0;">${fb.juniorVisibleFeedback?.overallEncouragement || fb.overallComment || '작성된 피드백이 없습니다.'}</p>`;
+                html += `</div>`;
+              }
+            }
+            html += `</div>`;
+          }
+        }
+      }
+
+      container.innerHTML = html;
+      document.body.appendChild(container);
+
+      const opt = {
+        margin:       10,
+        filename:     'growth_quest_report.pdf',
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      try {
+        await html2pdf().from(container).set(opt).save();
+      } catch (e) {
+        console.error('PDF 생성 중 오류:', e);
+        alert('PDF 생성 중 오류가 발생했습니다.');
+      } finally {
+        document.body.removeChild(container);
+      }
+    }
+
     renderAdminDashboard(container, user) {
+      const allJuniors = window.gqStore.getUsers().filter(u => u.role === "JUNIOR" && u.isActive);
+      
       container.innerHTML = `
         <div class="card" style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); color: white;">
-          <h2 style="font-size: 1.4rem; font-weight: 800; margin-bottom: 0.4rem;">🏛️ 인사팀 총괄운영자 대시보드</h2>
-          <p style="font-size: 0.9rem; opacity: 0.9;">GROWTH QUEST 전체 주니어사원 및 멘토링 현황 통합 관리</p>
+          <div style="display:flex; justify-content: space-between; align-items:center;">
+            <div>
+              <h2 style="font-size: 1.4rem; font-weight: 800; margin-bottom: 0.4rem;">신입사원 총괄운영자 대시보드</h2>
+              <p style="font-size: 0.9rem; opacity: 0.9;">GROWTH QUEST 전체 주니어사원 및 멘토 현황 종합 관리</p>
+            </div>
+            <div>
+              <button class="btn" id="btn-export-pdf" style="background: white; color: #0f172a; font-weight: 700;">전체 리포트 PDF 다운로드</button>
+            </div>
+          </div>
         </div>
 
-        <div class="grid grid-cols-4">
+        <div class="grid grid-cols-4" style="margin-bottom: 1.5rem;">
           <div class="card" style="text-align: center;">
             <div style="font-size: 0.85rem; color: var(--text-muted);">전체 계정 수</div>
             <div style="font-size: 1.8rem; font-weight: 800; color: var(--primary); margin-top: 0.3rem;">${window.gqStore.getUsers().length} 명</div>
@@ -2675,7 +3157,43 @@
             <div style="font-size: 1.8rem; font-weight: 800; color: var(--warning); margin-top: 0.3rem;">${window.gqStore.getJournals().filter(j=>j.status==='SUBMITTED').length} 건</div>
           </div>
         </div>
+
+        <h3 style="margin-bottom: 1rem;">전체 주니어사원 현황</h3>
+        <div class="grid grid-cols-2">
+          ${allJuniors.map(j => {
+            const journals = window.gqStore.getJournals().filter(jl => jl.juniorUserId === j.id && jl.status === 'SUBMITTED');
+            const validWeeksCount = window.gqStore.getProgramWeeks().filter(pw => !pw.isExcluded).length;
+            const submitRate = validWeeksCount > 0 ? Math.round((journals.length / validWeeksCount) * 100) : 0;
+            const latestJournal = journals.sort((a,b) => b.week - a.week)[0];
+            return `
+              <div class="card">
+                <div style="display:flex; justify-content:space-between; margin-bottom: 1rem;">
+                  <div>
+                    <div style="font-size: 1.2rem; font-weight: bold;">${j.displayName}</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">제출률: ${submitRate}% (${journals.length}/${validWeeksCount})</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">최근 제출: ${latestJournal ? latestJournal.week + '주차' : '없음'}</div>
+                  </div>
+                  <div style="text-align: right;">
+                    <button class="btn btn-secondary btn-sm nav-to-journal" data-junior="${j.id}">성장일지 보기 ➡️</button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
       `;
+
+      document.querySelectorAll('.nav-to-journal').forEach(btn => {
+        btn.onclick = (e) => {
+          this.selectedJuniorId = e.currentTarget.getAttribute('data-junior');
+          this.currentRoute = 'JOURNAL';
+          this.render();
+        };
+      });
+
+      document.getElementById('btn-export-pdf').onclick = () => {
+        this.showExportModal(); 
+      };
     }
 
     renderMyInfo(container, user) {
@@ -2691,6 +3209,75 @@
           </div>
         </div>
       `;
+    }
+    renderAdminWeeksSettings(container, user) {
+      const pWeeks = window.gqStore.getProgramWeeks();
+      
+      let tableRows = pWeeks.map(pw => `
+        <tr>
+          <td>${pw.label}</td>
+          <td>${pw.isExcluded ? '<span class="badge badge-warning">제외기간</span>' : `<span class="badge badge-primary">${pw.weekNumber}주차</span>`}</td>
+          <td><input type="date" class="form-input pw-start" data-id="${pw.id}" value="${pw.startDate}"></td>
+          <td><input type="date" class="form-input pw-end" data-id="${pw.id}" value="${pw.endDate}"></td>
+          <td>
+            <label style="display:flex; align-items:center; gap:0.5rem; justify-content:center;">
+              <input type="checkbox" class="pw-active" data-id="${pw.id}" ${pw.isActive ? 'checked' : ''}>
+              활성
+            </label>
+          </td>
+        </tr>
+      `).join('');
+
+      container.innerHTML = `
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">📅 운영주차 관리 (현재 KST: ${this.getCurrentKoreanDate().toLocaleString()})</div>
+          </div>
+          <div style="margin-bottom: 1rem;">
+            <p style="color: var(--text-muted); font-size: 0.9rem;">
+              각 주차의 시작일과 종료일을 설정합니다. 제출 대상에서 제외할 기간은 '제외기간'으로 등록되며, 제외기간은 작성률 분모에서 빠집니다.
+            </p>
+          </div>
+          <div class="table-responsive">
+            <table class="table" style="text-align: center;">
+              <thead>
+                <tr>
+                  <th>구분</th>
+                  <th>유형</th>
+                  <th>시작일</th>
+                  <th>종료일</th>
+                  <th>활성 상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tableRows}
+              </tbody>
+            </table>
+          </div>
+          <div style="margin-top: 1.5rem; text-align: right;">
+            <button class="btn btn-primary" id="btn-save-pweeks">변경사항 저장</button>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('btn-save-pweeks').onclick = async () => {
+        const pStart = document.querySelectorAll('.pw-start');
+        const pEnd = document.querySelectorAll('.pw-end');
+        const pActive = document.querySelectorAll('.pw-active');
+        
+        for (let i = 0; i < pStart.length; i++) {
+          const id = pStart[i].getAttribute('data-id');
+          const pw = pWeeks.find(p => p.id === id);
+          if (pw) {
+            pw.startDate = pStart[i].value;
+            pw.endDate = pEnd[i].value;
+            pw.isActive = pActive[i].checked;
+            pw.updatedAt = new Date().toISOString();
+            await db.collection('programWeeks').doc(pw.id).set(pw);
+          }
+        }
+        alert('운영주차 설정이 저장되었습니다.');
+      };
     }
   }
 
