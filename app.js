@@ -136,8 +136,9 @@
       
       const hashPassword = (password) => {
         let hash = 0;
-        for (let i = 0; i < password.length; i++) {
-          const char = password.charCodeAt(i);
+        const str = password + '_growth_quest_salt_2026';
+        for (let i = 0; i < str.length; i++) {
+          const char = str.charCodeAt(i);
           hash = ((hash << 5) - hash) + char;
           hash = hash & hash;
         }
