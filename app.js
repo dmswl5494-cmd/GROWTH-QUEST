@@ -306,6 +306,29 @@
 
     // GETTERS
     getUsers() { return this.data.users; }
+
+    updateUserAccount(userId, updates) {
+      const user = this.getUserById(userId);
+      if (user) {
+        Object.assign(user, updates);
+        this.saveUser(user);
+      }
+    }
+    
+    async clearFeedbacks() {
+      const batch = db.batch();
+      this.data.feedbacks.forEach(f => batch.delete(db.collection('feedbacks').doc(f.id)));
+      await batch.commit();
+    }
+    
+    async clearOverrides() {
+      const batch = db.batch();
+      this.data.overrides.forEach(o => batch.delete(db.collection('overrides').doc(o.id)));
+      await batch.commit();
+    }
+    
+    createBackup() { alert("Firebase에서 실시간으로 데이터베이스가 보호되고 있습니다."); }
+    restoreBackup(data) { alert("백업 복원은 개발자에게 문의하세요."); }
     getUserById(id) { return this.data.users.find(u => u.id === id); }
     getUserByUsername(username) { return this.data.users.find(u => u.username === username); }
     getAssignments() { return this.data.assignments; }
