@@ -1716,7 +1716,7 @@
         <!-- Junior Details Cards Grid -->
         <div class="grid grid-cols-2">
           ${juniors.map(j => {
-            const journals = window.gqStore.getJournals().filter(jl => jl.juniorUserId === j.id && jl.status === \'SUBMITTED\');
+            const journals = window.gqStore.getJournals().filter(jl => jl.juniorUserId === j.id && jl.status === 'SUBMITTED');
             const validWeeksCount = window.gqStore.getProgramWeeks().filter(pw => !pw.isExcluded).length;
             const latestJournal = window.gqStore.getJournal(j.id, this.selectedWeek);
             const feedback = window.gqStore.getFeedback(j.id, user.id, this.selectedWeek);
