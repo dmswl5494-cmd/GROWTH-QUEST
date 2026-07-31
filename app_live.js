@@ -301,6 +301,399 @@
     logout() { this.setSession(null); }
   }
 
+    subscribe(listener) {
+      this.listeners.push(listener);
+      return () => {
+        this.listeners = this.listeners.filter(l => l !== listener);
+      };
+    }
+
+    notify() {
+      this.listeners.forEach(fn => fn());
+    }
+
+    getItem(key, defaultValue) {
+      try {
+        const val = localStorage.getItem(key);
+        return val ? JSON.parse(val) : defaultValue;
+      } catch (e) {
+        console.error('Store read error for ' + key, e);
+        return defaultValue;
+      }
+    }
+
+    setItem(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+        this.notify();
+      } catch (e) {
+        console.error('Store write error for ' + key, e);
+      }
+    }
+
+    async init() {
+      const users = this.getItem(this.STORAGE_KEYS.USERS, null);
+      if (!users || users.length === 0) {
+        await this.seedInitialData();
+      }
+    }
+
+    async seedInitialData() {
+      const now = new Date().toISOString();
+      const defaultPwHash = hashPassword("initpw1!");
+
+      // 1. Initial Users
+      const juniors = [
+        { id: "u_chan", username: "chanyoung.min", displayName: "민찬영", role: "JUNIOR", isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 },
+        { id: "u_jiwon", username: "jiwon.choi", displayName: "최지원", role: "JUNIOR", isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 },
+        { id: "u_hyun", username: "hyunjun.lee", displayName: "이현준", role: "JUNIOR", isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 },
+        { id: "u_jaehong", username: "jaehong.choi", displayName: "최재홍", role: "JUNIOR", isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 },
+        { id: "u_taekyung", username: "taekyung.yoon", displayName: "윤태경", role: "JUNIOR", isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 },
+        { id: "u_gihyuk", username: "gihyuk.nam", displayName: "남기혁", role: "JUNIOR", isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 }
+      ];
+
+      const mentors = [
+        { id: "u_mento1", username: "mento_1", displayName: "멘토 1", role: "MENTOR", isActive: true, mustChangePassword: false, passwordHash: hashPassword("0001"), createdAt: now, updatedAt: now, version: 1 },
+        { id: "u_mento2", username: "mento_2", displayName: "멘토 2", role: "MENTOR", isActive: true, mustChangePassword: false, passwordHash: hashPassword("0001"), createdAt: now, updatedAt: now, version: 1 }
+      ];
+
+      const admin = {
+        id: "u_master", username: "master", displayName: "인사팀 총괄운영자", role: "ADMIN", isActive: true, mustChangePassword: false, passwordHash: hashPassword("Tldpadlstkxla1!"), createdAt: now, updatedAt: now, version: 1
+      };
+
+      const allUsers = [...juniors, ...mentors, admin];
+      this.setItem(this.STORAGE_KEYS.USERS, allUsers);
+
+      // 2. Initial N:M Assignments
+      const assignments = [
+        { id: "asg_1", mentorUserId: "u_mento1", juniorUserId: "u_chan", isActive: true, createdAt: now, updatedAt: now, createdByUserId: "u_master", version: 1 },
+        { id: "asg_2", mentorUserId: "u_mento1", juniorUserId: "u_jiwon", isActive: true, createdAt: now, updatedAt: now, createdByUserId: "u_master", version: 1 },
+        { id: "asg_3", mentorUserId: "u_mento1", juniorUserId: "u_hyun", isActive: true, createdAt: now, updatedAt: now, createdByUserId: "u_master", version: 1 },
+        { id: "asg_4", mentorUserId: "u_mento1", juniorUserId: "u_jaehong", isActive: true, createdAt: now, updatedAt: now, createdByUserId: "u_master", version: 1 },
+        { id: "asg_5", mentorUserId: "u_mento2", juniorUserId: "u_taekyung", isActive: true, createdAt: now, updatedAt: now, createdByUserId: "u_master", version: 1 },
+        { id: "asg_6", mentorUserId: "u_mento2", juniorUserId: "u_gihyuk", isActive: true, createdAt: now, updatedAt: now, createdByUserId: "u_master", version: 1 }
+      ];
+      this.setItem(this.STORAGE_KEYS.ASSIGNMENTS, assignments);
+
+      // Initialize empty arrays for other tables
+      this.setItem(this.STORAGE_KEYS.JOURNALS, []);
+      this.setItem(this.STORAGE_KEYS.ASSESSMENTS, []);
+      this.setItem(this.STORAGE_KEYS.FEEDBACKS, []);
+      this.setItem(this.STORAGE_KEYS.OVERRIDES, []);
+      this.setItem(this.STORAGE_KEYS.AUDIT_LOGS, []);
+      this.setItem(this.STORAGE_KEYS.BACKUPS, []);
+      this.setItem(this.STORAGE_KEYS.DATA_VERSION, 1);
+    }
+
+    // USER REPOSITORY
+    getUsers() { return this.getItem(this.STORAGE_KEYS.USERS, []); }
+    getUserById(id) { return this.getUsers().find(u => u.id === id); }
+    getUserByUsername(username) { return this.getUsers().find(u => u.username === username); }
+    
+    saveUser(user) {
+      const users = this.getUsers();
+      const idx = users.findIndex(u => u.id === user.id);
+      user.updatedAt = new Date().toISOString();
+      user.version = (user.version || 0) + 1;
+      
+      if (idx >= 0) users[idx] = user;
+      else users.push(user);
+      
+      this.setItem(this.STORAGE_KEYS.USERS, users);
+    }
+
+    // §4-1 Record-level Update Method for Admin
+    updateUserAccount(userId, updates) {
+      const users = this.getUsers();
+      const target = users.find(u => u.id === userId);
+      if (!target) throw new Error("사용자를 찾을 수 없습니다.");
+
+      Object.assign(target, updates);
+      target.updatedAt = new Date().toISOString();
+      target.version = (target.version || 0) + 1;
+
+      this.setItem(this.STORAGE_KEYS.USERS, users);
+      this.addAuditLog("u_master", "UPDATE_USER_ACCOUNT", [userId], null, updates);
+      return target;
+    }
+
+    // MENTOR ASSIGNMENT REPOSITORY
+    getAssignments() { return this.getItem(this.STORAGE_KEYS.ASSIGNMENTS, []); }
+    getActiveAssignmentsForMentor(mentorUserId) {
+      return this.getAssignments().filter(a => a.mentorUserId === mentorUserId && a.isActive);
+    }
+    getActiveAssignmentsForJunior(juniorUserId) {
+      return this.getAssignments().filter(a => a.juniorUserId === juniorUserId && a.isActive);
+    }
+
+    // §5 Multi-assignment Sync for Mentor
+    syncMentorAssignments(mentorUserId, selectedJuniorUserIds, createdByUserId) {
+      const assignments = this.getAssignments();
+      const now = new Date().toISOString();
+
+      // Deactivate unselected ones for this mentor
+      assignments.forEach(a => {
+        if (a.mentorUserId === mentorUserId) {
+          if (!selectedJuniorUserIds.includes(a.juniorUserId)) {
+            a.isActive = false;
+            a.updatedAt = now;
+            a.version += 1;
+          }
+        }
+      });
+
+      // Activate or create selected ones
+      selectedJuniorUserIds.forEach(juniorUserId => {
+        const existing = assignments.find(a => a.mentorUserId === mentorUserId && a.juniorUserId === juniorUserId);
+        if (existing) {
+          existing.isActive = true;
+          existing.updatedAt = now;
+          existing.version += 1;
+        } else {
+          assignments.push({
+            id: "asg_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+            mentorUserId,
+            juniorUserId,
+            isActive: true,
+            createdAt: now,
+            updatedAt: now,
+            createdByUserId,
+            version: 1
+          });
+        }
+      });
+
+      this.setItem(this.STORAGE_KEYS.ASSIGNMENTS, assignments);
+      this.addAuditLog(createdByUserId, "SYNC_MENTOR_ASSIGNMENTS", selectedJuniorUserIds, null, { mentorUserId, selectedJuniorUserIds });
+    }
+
+    assignMentor(mentorUserId, juniorUserId, createdByUserId) {
+      const assignments = this.getAssignments();
+      const existing = assignments.find(a => a.mentorUserId === mentorUserId && a.juniorUserId === juniorUserId);
+      const now = new Date().toISOString();
+
+      if (existing) {
+        existing.isActive = true;
+        existing.updatedAt = now;
+        existing.version += 1;
+      } else {
+        assignments.push({
+          id: "asg_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+          mentorUserId,
+          juniorUserId,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+          createdByUserId,
+          version: 1
+        });
+      }
+      this.setItem(this.STORAGE_KEYS.ASSIGNMENTS, assignments);
+      this.addAuditLog(createdByUserId, "ASSIGN_MENTOR", [juniorUserId], null, { mentorUserId, juniorUserId });
+    }
+
+    unassignMentor(mentorUserId, juniorUserId, actorUserId) {
+      const assignments = this.getAssignments();
+      const existing = assignments.find(a => a.mentorUserId === mentorUserId && a.juniorUserId === juniorUserId && a.isActive);
+      if (existing) {
+        existing.isActive = false;
+        existing.updatedAt = new Date().toISOString();
+        existing.version += 1;
+        this.setItem(this.STORAGE_KEYS.ASSIGNMENTS, assignments);
+        this.addAuditLog(actorUserId, "UNASSIGN_MENTOR", [juniorUserId], null, { mentorUserId, juniorUserId });
+      }
+    }
+
+    // JOURNAL REPOSITORY
+    getJournals() { return this.getItem(this.STORAGE_KEYS.JOURNALS, []); }
+    getJournal(juniorUserId, week) {
+      return this.getJournals().find(j => j.juniorUserId === juniorUserId && j.week === week);
+    }
+    saveJournal(journal) {
+      const journals = this.getJournals();
+      const idx = journals.findIndex(j => j.juniorUserId === journal.juniorUserId && j.week === journal.week);
+      journal.updatedAt = new Date().toISOString();
+      journal.version = (journal.version || 0) + 1;
+      if (!journal.id) journal.id = journal.juniorUserId + "_" + journal.week;
+
+      if (idx >= 0) journals[idx] = journal;
+      else journals.push(journal);
+      this.setItem(this.STORAGE_KEYS.JOURNALS, journals);
+    }
+
+    // SELF ASSESSMENT REPOSITORY
+    getAssessments() { return this.getItem(this.STORAGE_KEYS.ASSESSMENTS, []); }
+    getAssessment(juniorUserId, week) {
+      return this.getAssessments().find(a => a.juniorUserId === juniorUserId && a.week === week);
+    }
+    saveAssessment(assessment) {
+      const assessments = this.getAssessments();
+      const idx = assessments.findIndex(a => a.juniorUserId === assessment.juniorUserId && a.week === assessment.week);
+      assessment.updatedAt = new Date().toISOString();
+      assessment.version = (assessment.version || 0) + 1;
+      if (!assessment.id) assessment.id = assessment.juniorUserId + "_" + assessment.week;
+
+      if (idx >= 0) assessments[idx] = assessment;
+      else assessments.push(assessment);
+      this.setItem(this.STORAGE_KEYS.ASSESSMENTS, assessments);
+    }
+
+    // MENTOR FEEDBACK REPOSITORY
+    getFeedbacks() { return this.getItem(this.STORAGE_KEYS.FEEDBACKS, []); }
+    getFeedback(juniorUserId, mentorUserId, week) {
+      return this.getFeedbacks().find(f => f.juniorUserId === juniorUserId && f.mentorUserId === mentorUserId && f.week === week);
+    }
+    getFeedbacksForJunior(juniorUserId) {
+      return this.getFeedbacks().filter(f => f.juniorUserId === juniorUserId);
+    }
+    saveFeedback(feedback) {
+      const feedbacks = this.getFeedbacks();
+      const idx = feedbacks.findIndex(f => f.juniorUserId === feedback.juniorUserId && f.mentorUserId === feedback.mentorUserId && f.week === feedback.week);
+      feedback.updatedAt = new Date().toISOString();
+      feedback.version = (feedback.version || 0) + 1;
+      if (!feedback.id) feedback.id = feedback.juniorUserId + "_" + feedback.mentorUserId + "_" + feedback.week;
+
+      if (idx >= 0) feedbacks[idx] = feedback;
+      else feedbacks.push(feedback);
+      this.setItem(this.STORAGE_KEYS.FEEDBACKS, feedbacks);
+      this.addAuditLog(feedback.updatedByUserId, "SAVE_MENTOR_FEEDBACK", [feedback.juniorUserId], null, { week: feedback.week, status: feedback.status });
+    }
+
+    // GROWTH MAP OVERRIDES & CALCULATION
+    getOverrides() { return this.getItem(this.STORAGE_KEYS.OVERRIDES, []); }
+    getOverride(juniorUserId, week) {
+      return this.getOverrides().find(o => o.juniorUserId === juniorUserId && o.week === week);
+    }
+    saveOverride(override) {
+      const overrides = this.getOverrides();
+      const idx = overrides.findIndex(o => o.juniorUserId === override.juniorUserId && o.week === override.week);
+      override.updatedAt = new Date().toISOString();
+      override.version = (override.version || 0) + 1;
+      if (!override.id) override.id = override.juniorUserId + "_" + override.week;
+
+      if (idx >= 0) overrides[idx] = override;
+      else overrides.push(override);
+      this.setItem(this.STORAGE_KEYS.OVERRIDES, overrides);
+    }
+
+    // AUDIT LOGS
+    getAuditLogs() { return this.getItem(this.STORAGE_KEYS.AUDIT_LOGS, []); }
+    addAuditLog(actorUserId, actionType, targetUserIds, beforeData, afterData, reason) {
+      const logs = this.getAuditLogs();
+      logs.unshift({
+        id: "log_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+        actorUserId,
+        actionType,
+        targetUserIds,
+        beforeData,
+        afterData,
+        reason,
+        createdAt: new Date().toISOString()
+      });
+      this.setItem(this.STORAGE_KEYS.AUDIT_LOGS, logs);
+    }
+
+    // BACKUPS & RESTORE
+    getBackups() { return this.getItem(this.STORAGE_KEYS.BACKUPS, []); }
+    createBackup(actorUserId, dataType, targetJuniorUserIds, targetWeeks, reason) {
+      const backups = this.getBackups();
+      const backupData = {
+        feedbacks: this.getFeedbacks().filter(f => targetJuniorUserIds.includes(f.juniorUserId) && targetWeeks.includes(f.week)),
+        overrides: this.getOverrides().filter(o => targetJuniorUserIds.includes(o.juniorUserId) && targetWeeks.includes(o.week))
+      };
+      
+      const backup = {
+        id: "bak_" + Date.now(),
+        operationId: "op_" + Date.now(),
+        createdByUserId: actorUserId,
+        dataType,
+        targetJuniorUserIds,
+        targetWeeks,
+        backupData,
+        reason,
+        createdAt: new Date().toISOString()
+      };
+      
+      backups.unshift(backup);
+      this.setItem(this.STORAGE_KEYS.BACKUPS, backups);
+      return backup;
+    }
+
+    restoreBackup(backupId, actorUserId) {
+      const backups = this.getBackups();
+      const backup = backups.find(b => b.id === backupId);
+      if (!backup) return false;
+
+      // Restore items without wiping non-targeted items
+      if (backup.backupData.feedbacks) {
+        const currentFeedbacks = this.getFeedbacks();
+        backup.backupData.feedbacks.forEach(restored => {
+          const idx = currentFeedbacks.findIndex(f => f.id === restored.id);
+          if (idx >= 0) currentFeedbacks[idx] = restored;
+          else currentFeedbacks.push(restored);
+        });
+        this.setItem(this.STORAGE_KEYS.FEEDBACKS, currentFeedbacks);
+      }
+
+      if (backup.backupData.overrides) {
+        const currentOverrides = this.getOverrides();
+        backup.backupData.overrides.forEach(restored => {
+          const idx = currentOverrides.findIndex(o => o.id === restored.id);
+          if (idx >= 0) currentOverrides[idx] = restored;
+          else currentOverrides.push(restored);
+        });
+        this.setItem(this.STORAGE_KEYS.OVERRIDES, currentOverrides);
+      }
+
+      backup.restoredAt = new Date().toISOString();
+      backup.restoredByUserId = actorUserId;
+      this.setItem(this.STORAGE_KEYS.BACKUPS, backups);
+      this.addAuditLog(actorUserId, "RESTORE_BACKUP", backup.targetJuniorUserIds, null, { backupId });
+      return true;
+    }
+
+    // INITIALIZATION & PURGE ACTIONS
+    clearOverrides(targetJuniorUserIds, targetWeeks, actorUserId) {
+      const overrides = this.getOverrides();
+      const filtered = overrides.filter(o => !(targetJuniorUserIds.includes(o.juniorUserId) && targetWeeks.includes(o.week)));
+      const count = overrides.length - filtered.length;
+      this.setItem(this.STORAGE_KEYS.OVERRIDES, filtered);
+      this.addAuditLog(actorUserId, "CLEAR_GROWTH_OVERRIDES", targetJuniorUserIds, null, { deletedCount: count });
+      return count;
+    }
+
+    clearFeedbacks(targetJuniorUserIds, targetMentorUserIds, targetWeeks, actorUserId) {
+      const feedbacks = this.getFeedbacks();
+      const filtered = feedbacks.filter(f => {
+        const matchJunior = targetJuniorUserIds.length === 0 || targetJuniorUserIds.includes(f.juniorUserId);
+        const matchMentor = !targetMentorUserIds || targetMentorUserIds.length === 0 || targetMentorUserIds.includes(f.mentorUserId);
+        const matchWeek = targetWeeks.length === 0 || targetWeeks.includes(f.week);
+        return !(matchJunior && matchMentor && matchWeek);
+      });
+      const count = feedbacks.length - filtered.length;
+      this.setItem(this.STORAGE_KEYS.FEEDBACKS, filtered);
+      this.addAuditLog(actorUserId, "CLEAR_MENTOR_FEEDBACKS", targetJuniorUserIds, null, { deletedCount: count });
+      return count;
+    }
+
+    // SESSION MANAGEMENT
+    getCurrentSession() {
+      return this.getItem(this.STORAGE_KEYS.SESSION, null);
+    }
+
+    setSession(user) {
+      if (user) {
+        user.lastLoginAt = new Date().toISOString();
+        this.saveUser(user);
+      }
+      this.setItem(this.STORAGE_KEYS.SESSION, user);
+    }
+
+    logout() {
+      this.setItem(this.STORAGE_KEYS.SESSION, null);
+    }
+  }
+
   window.gqStore = new GrowthQuestStore();
 
   // --- 3. PRIVILEGE & SECURITY CHECKER ---

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script>
+    window.onerror = function(msg, url, lineNo, columnNo, error) {
+      const result = msg + ' at line ' + lineNo + ':' + columnNo;
+      fetch('http://127.0.0.1:8000/log?msg=' + encodeURIComponent(result));
+      return false;
+    };
+  </script>
+  <script src="app_live.js"></script>
+</head>
+<body></body>
+</html>
