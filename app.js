@@ -125,8 +125,85 @@
       this.listeners.forEach(fn => fn());
     }
 
+    
+    async seedIfEmpty() {
+      const snapshot = await db.collection('users').get();
+      if (!snapshot.empty) return;
+      
+      console.log('Seeding initial data to Firebase...');
+      const batch = db.batch();
+      const now = new Date().toISOString();
+      
+      const hashPassword = (password) => {
+        let hash = 0;
+        for (let i = 0; i < password.length; i++) {
+          const char = password.charCodeAt(i);
+          hash = ((hash << 5) - hash) + char;
+          hash = hash & hash;
+        }
+        return hash.toString();
+      };
+
+      const defaultPwHash = hashPassword('initpw1!');
+      const juniors = [
+        { id: 'u_chan', username: 'chanyoung.min', displayName: '민찬영', role: 'JUNIOR', isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 },
+        { id: 'u_jiwon', username: 'jiwon.choi', displayName: '최지원', role: 'JUNIOR', isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 },
+        { id: 'u_hyun', username: 'hyunjun.lee', displayName: '이현준', role: 'JUNIOR', isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 },
+        { id: 'u_jaehong', username: 'jaehong.choi', displayName: '최재홍', role: 'JUNIOR', isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 },
+        { id: 'u_taekyung', username: 'taekyung.yoon', displayName: '윤태경', role: 'JUNIOR', isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 },
+        { id: 'u_gihyuk', username: 'gihyuk.nam', displayName: '남기혁', role: 'JUNIOR', isActive: true, mustChangePassword: true, passwordHash: defaultPwHash, createdAt: now, updatedAt: now, version: 1 }
+      ];
+
+      const mentors = [
+        { id: 'u_mento1', username: 'mento_1', displayName: '멘토 1', role: 'MENTOR', isActive: true, mustChangePassword: false, passwordHash: hashPassword('0001'), createdAt: now, updatedAt: now, version: 1 },
+        { id: 'u_mento2', username: 'mento_2', displayName: '멘토 2', role: 'MENTOR', isActive: true, mustChangePassword: false, passwordHash: hashPassword('0001'), createdAt: now, updatedAt: now, version: 1 }
+      ];
+
+      const admin = {
+        id: 'u_master', username: 'master', displayName: '인사팀 총괄운영자', role: 'ADMIN', isActive: true, mustChangePassword: false, passwordHash: hashPassword('Tldpadlstkxla1!'), createdAt: now, updatedAt: now, version: 1
+      };
+
+      const allUsers = [...juniors, ...mentors, admin];
+      allUsers.forEach(u => {
+        batch.set(db.collection('users').doc(u.id), u);
+      });
+
+      // Also seed program weeks
+      const pWeeks = [
+        { weekNumber: 1, label: '1주차', startDate: '2026-09-01', endDate: '2026-09-04', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 2, label: '2주차', startDate: '2026-09-07', endDate: '2026-09-11', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 3, label: '3주차', startDate: '2026-09-14', endDate: '2026-09-18', isSubmissionWeek: true, isExcluded: false },
+        { label: '제외기간', startDate: '2026-09-21', endDate: '2026-09-25', isSubmissionWeek: false, isExcluded: true },
+        { weekNumber: 4, label: '4주차', startDate: '2026-09-28', endDate: '2026-10-02', isSubmissionWeek: true, isExcluded: false },
+        { label: '제외기간', startDate: '2026-10-05', endDate: '2026-10-09', isSubmissionWeek: false, isExcluded: true },
+        { weekNumber: 5, label: '5주차', startDate: '2026-10-12', endDate: '2026-10-16', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 6, label: '6주차', startDate: '2026-10-19', endDate: '2026-10-23', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 7, label: '7주차', startDate: '2026-10-26', endDate: '2026-10-30', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 8, label: '8주차', startDate: '2026-11-02', endDate: '2026-11-06', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 9, label: '9주차', startDate: '2026-11-09', endDate: '2026-11-13', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 10, label: '10주차', startDate: '2026-11-16', endDate: '2026-11-20', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 11, label: '11주차', startDate: '2026-11-23', endDate: '2026-11-27', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 12, label: '12주차', startDate: '2026-11-30', endDate: '2026-12-04', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 13, label: '13주차', startDate: '2026-12-07', endDate: '2026-12-11', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 14, label: '14주차', startDate: '2026-12-14', endDate: '2026-12-18', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 15, label: '15주차', startDate: '2026-12-21', endDate: '2026-12-24', isSubmissionWeek: true, isExcluded: false },
+        { weekNumber: 16, label: '16주차', startDate: '2026-12-28', endDate: '2026-12-31', isSubmissionWeek: true, isExcluded: false }
+      ];
+
+      pWeeks.forEach((w, i) => {
+        const id = 'pw_' + i;
+        batch.set(db.collection('programWeeks').doc(id), {
+          id, ...w, timezone: 'Asia/Seoul', isActive: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        });
+      });
+
+      await batch.commit();
+      console.log('Seeding complete!');
+    }
+
     async init() {
       await this.runMigrationIfRequired();
+      await this.seedIfEmpty();
       this.startRealtimeSync();
     }
 
