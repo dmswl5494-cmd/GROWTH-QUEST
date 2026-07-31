@@ -2016,6 +2016,13 @@
         </div>
       `;
 
+      const weekSelectorContainer = this.renderWeekSelector(this.selectedWeek, (w) => {
+        this.selectedWeek = w;
+        this.render();
+      });
+      document.getElementById('fb-view-week-selector-placeholder').appendChild(weekSelectorContainer);
+    }
+
     // §16. ADMIN ALL MENTOR FEEDBACK HISTORY (READ-ONLY FOR ALL JUNIORS & MENTORS)
     renderAdminFeedbackHistoryView(container, adminUser) {
       const allJuniors = window.gqStore.getUsers().filter(u => u.role === "JUNIOR" && u.isActive);
