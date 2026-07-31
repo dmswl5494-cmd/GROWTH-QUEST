@@ -309,6 +309,7 @@
     getUserById(id) { return this.data.users.find(u => u.id === id); }
     getUserByUsername(username) { return this.data.users.find(u => u.username === username); }
     getAssignments() { return this.data.assignments; }
+    getActiveAssignmentsForMentor(mentorId) { return this.data.assignments.filter(a => a.mentorUserId === mentorId && a.isActive); }
     getJournals() { return this.data.journals; }
     getJournal(juniorUserId, week) { return this.data.journals.find(j => j.juniorUserId === juniorUserId && j.week === week); }
     getAssessments() { return this.data.assessments; }
@@ -679,9 +680,9 @@
 
       document.getElementById('pw-change-form').onsubmit = async (e) => {
         e.preventDefault();
-        const curPw = document.getElementById('current-password').value;
-        const newPw = document.getElementById('new-password').value;
-        const confirmPw = document.getElementById('confirm-password').value;
+        const curPw = document.getElementById('current-password').value.trim();
+        const newPw = document.getElementById('new-password').value.trim();
+        const confirmPw = document.getElementById('confirm-password').value.trim();
         const alertBox = document.getElementById('pw-change-alert');
 
         if (user.passwordHash !== hashPassword(curPw)) {
